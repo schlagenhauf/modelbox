@@ -7,6 +7,13 @@ from direct.actor.Actor import Actor
 from direct.interval.IntervalGlobal import Sequence
 from panda3d.core import *
 
+class Model:
+    def __init__(self):
+        pass
+
+    def update(self):
+        pass
+
 class MyApp(ShowBase):
     def __init__(self):
         ShowBase.__init__(self)
@@ -128,5 +135,6 @@ class MyApp(ShowBase):
         self.render.setShaderAuto()
 
 
-app = MyApp()
-app.run()
+if __name__=='__main__':
+    app = MyApp()
+    app.run()
