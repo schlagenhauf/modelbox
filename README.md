@@ -19,4 +19,9 @@ sudo aptitude install panda3d
 
 ## Implementation Roadmap
 * Model Loader
-* TCP Client
+* TCP / UDP Client for
+ * Matlab
+ * Matlab Simulink
+ * C++
+ * Python
+* Dynamic stuff (animations, arrows, ...)
