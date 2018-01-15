@@ -7,15 +7,12 @@ from direct.actor.Actor import Actor
 from direct.interval.IntervalGlobal import Sequence
 from panda3d.core import *
 
-class Model:
-    def __init__(self):
-        pass
+from rendermsg_pb2 import *
+import zmq
+import logging
 
-    def update(self):
-        pass
-
-class MyApp(ShowBase):
-    def __init__(self):
+class Modelbox(ShowBase):
+    def __init__(self, ipAddr = 'localhost', port = '6666'):
         ShowBase.__init__(self)
 
         # draw ground plane
@@ -26,7 +23,7 @@ class MyApp(ShowBase):
         groundNodePath.setScale(size,size,size)
 
         # some fog
-        fog = Fog("Fog Name")
+        fog = Fog("FogName")
         fog.setColor(1,1,1);
         fog.setExpDensity(0.005)
         fog.setMode(Fog.MExponentialSquared)
@@ -37,14 +34,56 @@ class MyApp(ShowBase):
         # set up lights
         self.createLights()
 
-        # a cube
-        self.cube = self.loader.loadModel("models/box")
-        self.cube.reparentTo(self.render)
-
-        self.loadActor()
+        # two objects
+        self.cube_meas = self.loader.loadModel("models/box")
+        self.cube_meas.reparentTo(self.render)
+        self.cube_ref = self.loader.loadModel("models/box")
+        self.cube_ref.reparentTo(self.render)
 
         # Add the spinCameraTask procedure to the task manager.
         self.taskMgr.add(self.spinCameraTask, "SpinCameraTask")
+
+        # set up networking
+        self.context = zmq.Context()
+        self.receiver = self.context.socket(zmq.PAIR)
+        self.receiver.bind('tcp://*:%s' % port)
+        logging.info('Listening on port %s' % port)
+        self.taskMgr.add(self.fetchMessages, "FetchMessages")
+
+        # test sender
+        self.sender = self.context.socket(zmq.PAIR)
+        self.sender.connect('tcp://%s:%s' % (ipAddr, port))
+        logging.info('Client connected to %s:%s' % (ipAddr, port))
+
+
+    def fetchMessages(self, task):
+        inQuat = LQuaternion()
+        inQuat.setHpr(LVector3f(task.time,1,0), CS_default)
+        rm = RenderMessage()
+        rm.reference.w = inQuat.getW()
+        rm.reference.x = inQuat.getX()
+        rm.reference.y = inQuat.getY()
+        rm.reference.z = inQuat.getZ()
+        rm.actual.w = 1
+        rm.actual.x = 0
+        rm.actual.y = 0
+        rm.actual.z = 0
+        self.sender.send(rm.SerializeToString())
+
+        try:
+            data = self.receiver.recv(flags=zmq.NOBLOCK)
+            msg = RenderMessage()
+            msg.ParseFromString(data)
+            qRef = LQuaternion(msg.reference.w, msg.reference.w, msg.reference.y, msg.reference.z)
+            qAct = LQuaternion(msg.actual.w, msg.actual.w, msg.actual.y, msg.actual.z)
+            print qRef
+            self.cube_ref.setQuat(qRef)
+            self.cube_meas.setQuat(qAct)
+        except zmq.error.Again:
+            pass
+
+        return Task.cont
+
 
     def createPlane(self, size):
         format = GeomVertexFormat.getV3()
@@ -83,39 +122,6 @@ class MyApp(ShowBase):
         self.camera.setHpr(angleDegrees, 0, 0)
         return Task.cont
 
-    def loadActor(self):
-        # Load and transform the panda actor.
-        self.pandaActor = Actor("models/panda-model",
-                                {"walk": "models/panda-walk4"})
-        self.pandaActor.setScale(0.005, 0.005, 0.005)
-        self.pandaActor.reparentTo(self.render)
-        # Loop its animation.
-        self.pandaActor.loop("walk")
-
-        # Create the four lerp intervals needed for the panda to
-        # walk back and forth.
-        pandaPosInterval1 = self.pandaActor.posInterval(13,
-                                                        Point3(0, -10, 0),
-                                                        startPos=Point3(0, 10, 0))
-        pandaPosInterval2 = self.pandaActor.posInterval(13,
-                                                        Point3(0, 10, 0),
-                                                        startPos=Point3(0, -10, 0))
-        pandaHprInterval1 = self.pandaActor.hprInterval(3,
-                                                        Point3(180, 0, 0),
-                                                        startHpr=Point3(0, 0, 0))
-        pandaHprInterval2 = self.pandaActor.hprInterval(3,
-                                                        Point3(0, 0, 0),
-                                                        startHpr=Point3(180, 0, 0))
-
-        # Create and play the sequence that coordinates the intervals.
-        self.pandaPace = Sequence(pandaPosInterval1,
-                                  pandaHprInterval1,
-                                  pandaPosInterval2,
-                                  pandaHprInterval2,
-                                  name="pandaPace")
-        self.pandaPace.loop()
-
-
     def createLights(self):
         # lights
         self.light = DirectionalLight('directionalLight')
@@ -136,5 +142,5 @@ class MyApp(ShowBase):
 
 
 if __name__=='__main__':
-    app = MyApp()
+    app = Modelbox()
     app.run()

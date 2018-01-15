@@ -1,0 +1,13 @@
+syntax = "proto2";
+
+message Quaternion {
+  required float w = 1;
+  required float x = 2;
+  required float y = 3;
+  required float z = 4;
+}
+
+message RenderMessage {
+  required Quaternion reference = 1;
+  required Quaternion actual = 2;
+}
