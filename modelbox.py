@@ -35,10 +35,12 @@ class Modelbox(ShowBase):
         self.createLights()
 
         # two objects
-        self.cube_meas = self.loader.loadModel("models/box")
+        self.cube_meas = self.loader.loadModel("models/camera")
         self.cube_meas.reparentTo(self.render)
-        self.cube_ref = self.loader.loadModel("models/box")
+        self.cube_meas.setPos(2,0,2)
+        self.cube_ref = self.loader.loadModel("models/camera")
         self.cube_ref.reparentTo(self.render)
+        self.cube_ref.setPos(-2,0,2)
 
         # Add the spinCameraTask procedure to the task manager.
         self.taskMgr.add(self.spinCameraTask, "SpinCameraTask")
@@ -50,33 +52,34 @@ class Modelbox(ShowBase):
         logging.info('Listening on port %s' % port)
         self.taskMgr.add(self.fetchMessages, "FetchMessages")
 
-        # test sender
-        self.sender = self.context.socket(zmq.PAIR)
-        self.sender.connect('tcp://%s:%s' % (ipAddr, port))
-        logging.info('Client connected to %s:%s' % (ipAddr, port))
+        ## test sender
+        #self.sender = self.context.socket(zmq.PAIR)
+        #self.sender.connect('tcp://%s:%s' % (ipAddr, port))
+        #logging.info('Client connected to %s:%s' % (ipAddr, port))
 
 
     def fetchMessages(self, task):
-        inQuat = LQuaternion()
-        inQuat.setHpr(LVector3f(task.time,1,0), CS_default)
-        rm = RenderMessage()
-        rm.reference.w = inQuat.getW()
-        rm.reference.x = inQuat.getX()
-        rm.reference.y = inQuat.getY()
-        rm.reference.z = inQuat.getZ()
-        rm.actual.w = 1
-        rm.actual.x = 0
-        rm.actual.y = 0
-        rm.actual.z = 0
-        self.sender.send(rm.SerializeToString())
+        #inQuat = LQuaternion()
+        #inQuat.setHpr(LVector3f(sin(task.time),1,0), CS_default)
+        #rm = RenderMessage()
+        #rm.reference.w = inQuat.getW()
+        #rm.reference.x = inQuat.getX()
+        #rm.reference.y = inQuat.getY()
+        #rm.reference.z = inQuat.getZ()
+        #rm.actual.w = 1
+        #rm.actual.x = 0
+        #rm.actual.y = 0
+        #rm.actual.z = 0
+        #self.sender.send(rm.SerializeToString())
 
         try:
             data = self.receiver.recv(flags=zmq.NOBLOCK)
             msg = RenderMessage()
             msg.ParseFromString(data)
-            qRef = LQuaternion(msg.reference.w, msg.reference.w, msg.reference.y, msg.reference.z)
-            qAct = LQuaternion(msg.actual.w, msg.actual.w, msg.actual.y, msg.actual.z)
-            print qRef
+            qRef = LQuaternion()
+            qRef.set(msg.reference.x, msg.reference.y, msg.reference.z, msg.reference.w)
+            qAct = LQuaternion()
+            qAct.set(msg.actual.x, msg.actual.y, msg.actual.z, msg.actual.w)
             self.cube_ref.setQuat(qRef)
             self.cube_meas.setQuat(qAct)
         except zmq.error.Again:
@@ -116,10 +119,11 @@ class Modelbox(ShowBase):
 
     # Define a procedure to move the camera.
     def spinCameraTask(self, task):
-        angleDegrees = task.time * 24.0
+        angleDegrees = 35
+        #angleDegrees = task.time * 24.0
         angleRadians = angleDegrees * (pi / 180.0)
-        self.camera.setPos(20 * sin(angleRadians), -20.0 * cos(angleRadians), 3)
-        self.camera.setHpr(angleDegrees, 0, 0)
+        self.camera.setPos(20 * sin(angleRadians), -20.0 * cos(angleRadians), 10)
+        self.camera.setHpr(angleDegrees, -20, 0)
         return Task.cont
 
     def createLights(self):
