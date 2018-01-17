@@ -6,7 +6,9 @@ from direct.task import Task
 from direct.actor.Actor import Actor
 from direct.interval.IntervalGlobal import Sequence
 from panda3d.core import *
+from math import sqrt
 
+from google import protobuf
 from rendermsg_pb2 import *
 import zmq
 import logging
@@ -22,6 +24,11 @@ class Modelbox(ShowBase):
         groundNodePath.setPos(-size/2, -size/2, 0);
         groundNodePath.setScale(size,size,size)
 
+        # create axis arrows
+        self.axes = self.createAxisArrows()
+        axesNodePath = self.render.attachNewNode(self.axes)
+        axesNodePath.setRenderModeThickness(3)
+
         # some fog
         fog = Fog("FogName")
         fog.setColor(1,1,1);
@@ -35,10 +42,44 @@ class Modelbox(ShowBase):
         self.createLights()
 
         # two objects
+        """
+        q = LQuaternion()
+        self.cube1 = self.loader.loadModel("models/camera")
+        self.cube1.setColorScale(2.2,2.2,2.2,1)
+        self.cube1.reparentTo(self.render)
+        self.cube1.setPos(3,0,2)
+        q.set(1,0,0,0)
+        print q.getHpr()
+        self.cube1.setQuat(q)
+
+        self.cube2 = self.loader.loadModel("models/camera")
+        self.cube2.setColorScale(2.2,2.2,2.2,1)
+        self.cube2.reparentTo(self.render)
+        self.cube2.setPos(1,0,2)
+        q.set(0,1,0,0)
+        self.cube2.setQuat(q)
+
+        self.cube3 = self.loader.loadModel("models/camera")
+        self.cube3.setColorScale(2.2,2.2,2.2,1)
+        self.cube3.reparentTo(self.render)
+        self.cube3.setPos(-1,0,2)
+        q.set(0,0,1,0)
+        self.cube3.setQuat(q)
+
+        self.cube4 = self.loader.loadModel("models/camera")
+        self.cube4.setColorScale(2.2,2.2,2.2,1)
+        self.cube4.reparentTo(self.render)
+        self.cube4.setPos(-3,0,2)
+        q.set(0,0,0,1)
+        self.cube4.setQuat(q)
+        """
+
         self.cube_meas = self.loader.loadModel("models/camera")
+        self.cube_meas.setColorScale(1.2,1.2,1.2,1)
         self.cube_meas.reparentTo(self.render)
         self.cube_meas.setPos(2,0,2)
         self.cube_ref = self.loader.loadModel("models/camera")
+        self.cube_ref.setColorScale(2,0.8,0.8,0.5)
         self.cube_ref.reparentTo(self.render)
         self.cube_ref.setPos(-2,0,2)
 
@@ -52,40 +93,66 @@ class Modelbox(ShowBase):
         logging.info('Listening on port %s' % port)
         self.taskMgr.add(self.fetchMessages, "FetchMessages")
 
-        ## test sender
-        #self.sender = self.context.socket(zmq.PAIR)
-        #self.sender.connect('tcp://%s:%s' % (ipAddr, port))
-        #logging.info('Client connected to %s:%s' % (ipAddr, port))
-
 
     def fetchMessages(self, task):
-        #inQuat = LQuaternion()
-        #inQuat.setHpr(LVector3f(sin(task.time),1,0), CS_default)
-        #rm = RenderMessage()
-        #rm.reference.w = inQuat.getW()
-        #rm.reference.x = inQuat.getX()
-        #rm.reference.y = inQuat.getY()
-        #rm.reference.z = inQuat.getZ()
-        #rm.actual.w = 1
-        #rm.actual.x = 0
-        #rm.actual.y = 0
-        #rm.actual.z = 0
-        #self.sender.send(rm.SerializeToString())
-
         try:
             data = self.receiver.recv(flags=zmq.NOBLOCK)
             msg = RenderMessage()
             msg.ParseFromString(data)
             qRef = LQuaternion()
-            qRef.set(msg.reference.x, msg.reference.y, msg.reference.z, msg.reference.w)
+            qRef.set(msg.reference.w, msg.reference.x, msg.reference.y, msg.reference.z)
+            qTrans = LQuaternion()
+            qTrans.set(0, 1/sqrt(2), 1/sqrt(2), 0)
+            qRefPrime = - qTrans * qRef * qTrans
             qAct = LQuaternion()
-            qAct.set(msg.actual.x, msg.actual.y, msg.actual.z, msg.actual.w)
-            self.cube_ref.setQuat(qRef)
-            self.cube_meas.setQuat(qAct)
+            qAct.set(msg.actual.w, msg.actual.x, msg.actual.y, msg.actual.z)
+            qActPrime = - qTrans * qAct * qTrans
+
+            self.cube_ref.setQuat(qRefPrime)
+            self.cube_meas.setQuat(qActPrime)
+            print "w: %f, x: %f, y: %f, z: %f" % (msg.reference.w, msg.reference.x, msg.reference.y, msg.reference.z)
+            print "hpr: %s" % qRef.getHpr()
         except zmq.error.Again:
             pass
+        except protobuf.message.DecodeError as e:
+            logging.error(str(e))
+
 
         return Task.cont
+
+    def createAxisArrows(self):
+        format = GeomVertexFormat.getV3()
+        vdata = GeomVertexData("vertices", format, Geom.UHStatic)
+        vdata.setNumRows(4)
+
+        # define vertices
+        vertexWriter = GeomVertexWriter(vdata, "vertex")
+        vertexWriter.addData3f(0,0,0)
+        vertexWriter.addData3f(1,0,0)
+        vertexWriter.addData3f(0,1,0)
+        vertexWriter.addData3f(0,0,1)
+
+        # define two triangles via indices
+        lines = GeomLines(Geom.UHStatic)
+        lines.addVertex(0)
+        lines.addVertex(1)
+        lines.addVertex(0)
+        lines.addVertex(2)
+        lines.addVertex(0)
+        lines.addVertex(3)
+        lines.closePrimitive()
+
+        # make a Geom object to hold the primitives
+        axisArrows = Geom(vdata)
+        axisArrows.addPrimitive(lines)
+        axisArrowNode = GeomNode("AxisArrows")
+        axisArrowNode.addGeom(axisArrows)
+
+        # attach labels
+        xLabel = TextNode('xLabel')
+        xLabel.setText('X')
+
+        return axisArrowNode
 
 
     def createPlane(self, size):
