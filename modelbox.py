@@ -12,9 +12,10 @@ from google import protobuf
 from rendermsg_pb2 import *
 import zmq
 import logging
+import argparse
 
 class Modelbox(ShowBase):
-    def __init__(self, ipAddr = 'localhost', port = '6666'):
+    def __init__(self, ip, port):
         ShowBase.__init__(self)
 
         # draw ground plane
@@ -42,38 +43,6 @@ class Modelbox(ShowBase):
         self.createLights()
 
         # two objects
-        """
-        q = LQuaternion()
-        self.cube1 = self.loader.loadModel("models/camera")
-        self.cube1.setColorScale(2.2,2.2,2.2,1)
-        self.cube1.reparentTo(self.render)
-        self.cube1.setPos(3,0,2)
-        q.set(1,0,0,0)
-        print q.getHpr()
-        self.cube1.setQuat(q)
-
-        self.cube2 = self.loader.loadModel("models/camera")
-        self.cube2.setColorScale(2.2,2.2,2.2,1)
-        self.cube2.reparentTo(self.render)
-        self.cube2.setPos(1,0,2)
-        q.set(0,1,0,0)
-        self.cube2.setQuat(q)
-
-        self.cube3 = self.loader.loadModel("models/camera")
-        self.cube3.setColorScale(2.2,2.2,2.2,1)
-        self.cube3.reparentTo(self.render)
-        self.cube3.setPos(-1,0,2)
-        q.set(0,0,1,0)
-        self.cube3.setQuat(q)
-
-        self.cube4 = self.loader.loadModel("models/camera")
-        self.cube4.setColorScale(2.2,2.2,2.2,1)
-        self.cube4.reparentTo(self.render)
-        self.cube4.setPos(-3,0,2)
-        q.set(0,0,0,1)
-        self.cube4.setQuat(q)
-        """
-
         self.cube_meas = self.loader.loadModel("models/camera")
         self.cube_meas.setColorScale(1.2,1.2,1.2,1)
         self.cube_meas.reparentTo(self.render)
@@ -88,15 +57,16 @@ class Modelbox(ShowBase):
 
         # set up networking
         self.context = zmq.Context()
-        self.receiver = self.context.socket(zmq.PAIR)
-        self.receiver.bind('tcp://*:%s' % port)
-        logging.info('Listening on port %s' % port)
+        self.subscriber = self.context.socket(zmq.SUB)
+        self.subscriber.connect('tcp://%s:%s' % (ip, port))
+        self.subscriber.setsockopt(zmq.SUBSCRIBE, '')
+        logging.info('Subscribed to server at %s:%s' % (ip, port))
         self.taskMgr.add(self.fetchMessages, "FetchMessages")
 
 
     def fetchMessages(self, task):
         try:
-            data = self.receiver.recv(flags=zmq.NOBLOCK)
+            data = self.subscriber.recv(flags=zmq.NOBLOCK)
             msg = RenderMessage()
             msg.ParseFromString(data)
             qRef = LQuaternion()
@@ -110,8 +80,8 @@ class Modelbox(ShowBase):
 
             self.cube_ref.setQuat(qRefPrime)
             self.cube_meas.setQuat(qActPrime)
-            print "w: %f, x: %f, y: %f, z: %f" % (msg.reference.w, msg.reference.x, msg.reference.y, msg.reference.z)
-            print "hpr: %s" % qRef.getHpr()
+            #print "w: %f, x: %f, y: %f, z: %f" % (msg.reference.w, msg.reference.x, msg.reference.y, msg.reference.z)
+            #print "hpr: %s" % qRef.getHpr()
         except zmq.error.Again:
             pass
         except protobuf.message.DecodeError as e:
@@ -213,5 +183,13 @@ class Modelbox(ShowBase):
 
 
 if __name__=='__main__':
-    app = Modelbox()
+    parser = argparse.ArgumentParser(description='Modelbox')
+    parser.add_argument("ip", nargs='?', default='localhost', help='address to the corresponding server')
+    parser.add_argument("port", nargs='?', default='6666', help='port of the corresponding server')
+    parser.add_argument("-l", "--loglevel", dest="logLevel", default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], help="Set the logging level")
+    args = parser.parse_args()
+    if args.logLevel:
+        logging.basicConfig(level=getattr(logging, args.logLevel))
+
+    app = Modelbox(args.ip, args.port)
     app.run()
